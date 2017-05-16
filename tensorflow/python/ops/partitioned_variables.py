@@ -54,8 +54,6 @@ from __future__ import print_function
 
 import math
 
-import six  # pylint: disable=unused-import
-
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import variable_scope
@@ -65,6 +63,7 @@ __all__ = [
     "create_partitioned_variables",
     "variable_axis_size_partitioner",
     "min_max_variable_partitioner",
+    "fixed_size_partitioner",
 ]
 
 
@@ -215,6 +214,24 @@ def min_max_variable_partitioner(max_partitions=1, axis=0,
   return _partitioner
 
 
+def fixed_size_partitioner(num_shards, axis=0):
+  """Partitioner to specify a fixed number of shards along given axis.
+
+  Args:
+    num_shards: `int`, number of shards to partition variable.
+    axis: `int`, axis to partition on.
+
+  Returns:
+    A partition function usable as the `partitioner` argument to
+    `variable_scope`, `get_variable`, and `get_partitioned_variable_list`.
+  """
+  def _partitioner(shape, **unused_args):
+    partitions_list = [1] * len(shape)
+    partitions_list[axis] = min(num_shards, shape[axis].value)
+    return partitions_list
+  return _partitioner
+
+
 def create_partitioned_variables(
     shape, slicing, initializer, dtype=dtypes.float32,
     trainable=True, collections=None, name=None, reuse=None):
@@ -246,7 +263,7 @@ def create_partitioned_variables(
     trainable: If True also add all the variables to the graph collection
       `GraphKeys.TRAINABLE_VARIABLES`.
     collections: List of graph collections keys to add the variables to.
-      Defaults to `[GraphKeys.VARIABLES]`.
+      Defaults to `[GraphKeys.GLOBAL_VARIABLES]`.
     name: Optional name for the full variable.  Defaults to
       `"PartitionedVariable"` and gets uniquified automatically.
     reuse: Boolean or `None`; if `True` and name is set, it would reuse
@@ -287,5 +304,5 @@ def create_partitioned_variables(
         trainable=trainable,
         partitioner=partitioner,
         collections=collections)
-    return partitioned_var._get_variable_list()
+    return list(partitioned_var)
     # pylint: enable=protected-access

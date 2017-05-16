@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_RPC_GRPC_CALL_H_
 #define THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_RPC_GRPC_CALL_H_
 
+#include "tensorflow/core/lib/core/refcount.h"
 #include "tensorflow/core/platform/macros.h"
 
 #include "grpc++/grpc++.h"
@@ -247,7 +248,7 @@ class Call : public UntypedCall<Service> {
 
   // Used as void* completion markers from grpc to indicate different
   // events of interest for a Call.
-  using typename UntypedCall<Service>::Tag;
+  typedef typename UntypedCall<Service>::Tag Tag;
   Tag request_received_tag_{this, Tag::kRequestReceived};
   Tag response_sent_tag_{this, Tag::kResponseSent};
   Tag cancelled_tag_{this, Tag::kCancelled};

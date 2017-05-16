@@ -106,7 +106,7 @@ void IntraProcessRendezvous::SameWorkerRecvDone(
   CopyTensor::ViaDMA(parsed.edge_name, send_args.device_context,
                      recv_args.device_context, src_device, dst_device,
                      send_args.alloc_attrs, recv_args.alloc_attrs, &in, out,
-                     done);
+                     std::move(done));
 }
 
 void IntraProcessRendezvous::RecvAsync(const ParsedKey& parsed,
@@ -120,18 +120,22 @@ void IntraProcessRendezvous::RecvAsync(const ParsedKey& parsed,
                                            const Rendezvous::Args& send_args,
                                            const Rendezvous::Args& recv_args,
                                            const Tensor& in, bool is_dead) {
-    Status s = status;
-    Tensor* out = new Tensor;
+    // If "in" is an uninitialized tensor, do copy-construction to preserve
+    // the uninitialized state, along with data type and shape info, which
+    // is useful for debugger purposes.
+    Tensor* out = in.IsInitialized() ? new Tensor : new Tensor(in);
+
     StatusCallback final_callback = [done, send_args, recv_args, out,
                                      is_dead](const Status& s) {
       done(s, send_args, recv_args, *out, is_dead);
       delete out;
     };
 
-    if (s.ok()) {
-      SameWorkerRecvDone(parsed, send_args, recv_args, in, out, final_callback);
+    if (status.ok() && in.IsInitialized()) {
+      SameWorkerRecvDone(parsed, send_args, recv_args, in, out,
+                         std::move(final_callback));
     } else {
-      final_callback(s);
+      final_callback(status);
     }
   });
 }

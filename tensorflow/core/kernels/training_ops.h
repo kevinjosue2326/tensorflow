@@ -123,7 +123,8 @@ struct ApplyAdam {
                   typename TTypes<T>::ConstScalar beta1,
                   typename TTypes<T>::ConstScalar beta2,
                   typename TTypes<T>::ConstScalar epsilon,
-                  typename TTypes<T>::ConstFlat grad);
+                  typename TTypes<T>::ConstFlat grad,
+                  bool use_nesterov);
 };
 
 template <typename Device, typename T>
@@ -137,6 +138,17 @@ struct ApplyRMSProp {
                   typename TTypes<T>::ConstFlat grad);
 };
 
+template <typename Device, typename T>
+struct ApplyCenteredRMSProp {
+  void operator()(const Device& d, typename TTypes<T>::Flat var,
+                  typename TTypes<T>::Flat mg, typename TTypes<T>::Flat ms,
+                  typename TTypes<T>::Flat mom,
+                  typename TTypes<T>::ConstScalar lr,
+                  typename TTypes<T>::ConstScalar rho,
+                  typename TTypes<T>::ConstScalar momentum,
+                  typename TTypes<T>::ConstScalar epsilon,
+                  typename TTypes<T>::ConstFlat grad);
+};
 }  // end namespace functor
 }  // end namespace tensorflow
 

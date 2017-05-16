@@ -18,236 +18,140 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.contrib.distributions.python.ops import distribution
-from tensorflow.contrib.distributions.python.ops import distribution_util
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import check_ops
-from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import random_ops
+from tensorflow.python.ops.distributions import distribution
+from tensorflow.python.ops.distributions import util as distribution_util
 
 __all__ = [
-  'Poisson',
+    "Poisson",
 ]
+
+
+_poisson_sample_note = """
+Note that the input value must be a non-negative floating point tensor with
+dtype `dtype` and whose shape can be broadcast with `self.rate`. `x` is only
+legal if it is non-negative and its components are equal to integer values.
+"""
 
 
 class Poisson(distribution.Distribution):
   """Poisson distribution.
 
-  The Poisson distribution is parameterized by `lam`, the rate parameter.
+  The Poisson distribution is parameterized by an event `rate` parameter.
 
-  The pmf of this distribution is:
+  #### Mathematical Details
 
+  The probability mass function (pmf) is,
+
+  ```none
+  pmf(k; lambda, k >= 0) = (lambda^k / k!) / Z
+  Z = exp(lambda).
   ```
 
-  pmf(k) = e^(-lam) * lam^k / k!,  k >= 0
-  ```
+  where `rate = lambda` and `Z` is the normalizing constant.
 
   """
 
   def __init__(self,
-               lam,
-               validate_args=True,
-               allow_nan_stats=False,
+               rate,
+               validate_args=False,
+               allow_nan_stats=True,
                name="Poisson"):
-    """Construct Poisson distributions.
+    """Initialize a batch of Poisson distributions.
 
     Args:
-      lam: Floating point tensor, the rate parameter of the
-        distribution(s). `lam` must be positive.
-      validate_args: Whether to assert that `lam > 0` as well as inputs to
-        pmf computations are non-negative integers. If validate_args is
-        `False`, then `pmf` computations might return NaN, as well as
-        can be evaluated at any real value.
-      allow_nan_stats:  Boolean, default `False`.  If `False`, raise an
-        exception if a statistic (e.g. mean/mode/etc...) is undefined for any
-        batch member.  If `True`, batch members with valid parameters leading to
-        undefined statistics will return NaN for this statistic.
-      name: A name for this distribution.
+      rate: Floating point tensor, the rate parameter of the
+        distribution(s). `rate` must be positive.
+      validate_args: Python `bool`, default `False`. When `True` distribution
+        parameters are checked for validity despite possibly degrading runtime
+        performance. When `False` invalid inputs may silently render incorrect
+        outputs.
+      allow_nan_stats: Python `bool`, default `True`. When `True`, statistics
+        (e.g., mean, mode, variance) use the value "`NaN`" to indicate the
+        result is undefined. When `False`, an exception is raised if one or
+        more of the statistic's batch members are undefined.
+      name: Python `str` name prefixed to Ops created by this class.
     """
-    with ops.name_scope(name, values=[lam]) as scope:
-      self._name = scope
-      with ops.control_dependencies(
-          [check_ops.assert_positive(lam)] if validate_args else []):
-        self._lam = array_ops.identity(lam, name="lam")
-        self._validate_args = validate_args
-        self._allow_nan_stats = allow_nan_stats
+    parameters = locals()
+    with ops.name_scope(name, values=[rate]):
+      with ops.control_dependencies([check_ops.assert_positive(rate)] if
+                                    validate_args else []):
+        self._rate = array_ops.identity(rate, name="rate")
+    super(Poisson, self).__init__(
+        dtype=self._rate.dtype,
+        reparameterization_type=distribution.NOT_REPARAMETERIZED,
+        validate_args=validate_args,
+        allow_nan_stats=allow_nan_stats,
+        parameters=parameters,
+        graph_parents=[self._rate],
+        name=name)
 
   @property
-  def name(self):
-    return self._name
-
-  @property
-  def dtype(self):
-    return self._lam.dtype
-
-  @property
-  def lam(self):
+  def rate(self):
     """Rate parameter."""
-    return self._lam
+    return self._rate
 
-  @property
-  def validate_args(self):
-    """Boolean describing behavior on invalid input."""
-    return self._validate_args
+  def _batch_shape_tensor(self):
+    return array_ops.shape(self.rate)
 
-  @property
-  def allow_nan_stats(self):
-    """Boolean describing behavior when a stat is undefined for batch member."""
-    return self._allow_nan_stats
+  def _batch_shape(self):
+    return self.rate.get_shape()
 
-  def batch_shape(self, name="batch_shape"):
-    with ops.name_scope(self.name):
-      with ops.name_scope(name, values=[self.lam]):
-        return array_ops.shape(self.lam)
+  def _event_shape_tensor(self):
+    return constant_op.constant([], dtype=dtypes.int32)
 
-  def get_batch_shape(self):
-    return self.lam.get_shape()
-
-  def event_shape(self, name="event_shape"):
-    with ops.name_scope(self.name):
-      with ops.name_scope(name):
-        return constant_op.constant([], dtype=dtypes.int32)
-
-  def get_event_shape(self):
+  def _event_shape(self):
     return tensor_shape.scalar()
 
-  def log_cdf(self, x, name="log_cdf"):
-    """Log cumulative density function.
+  @distribution_util.AppendDocstring(_poisson_sample_note)
+  def _log_prob(self, x):
+    return self._log_unnormalized_prob(x) - self._log_normalization()
 
-    Args:
-      x: Non-negative floating point tensor with dtype `dtype` and whose shape
-        can be broadcast with `self.lam`.
-      name: A name for this operation.
+  @distribution_util.AppendDocstring(_poisson_sample_note)
+  def _prob(self, x):
+    return math_ops.exp(self._log_prob(x))
 
-    Returns:
-      The Log CDF of the events.
-    """
-    with ops.name_scope(self.name):
-      with ops.name_scope(name, values=[x]):
-        return math_ops.log(self.cdf(x))
+  @distribution_util.AppendDocstring(_poisson_sample_note)
+  def _log_cdf(self, x):
+    return math_ops.log(self.cdf(x))
 
-  def cdf(self, x, name="cdf"):
-    """Cumulative density function.
+  @distribution_util.AppendDocstring(_poisson_sample_note)
+  def _cdf(self, x):
+    if self.validate_args:
+      # We set `check_integer=False` since the CDF is defined on whole real
+      # line.
+      x = distribution_util.embed_check_nonnegative_discrete(
+          x, check_integer=False)
+    return math_ops.igammac(math_ops.floor(x + 1), self.rate)
 
-    Args:
-      x: Non-negative floating point tensor with dtype `dtype` and whose shape
-        can be broadcast with `self.lam`.
-      name: A name for this operation.
+  def _log_normalization(self):
+    return self.rate
 
-    Returns:
-      The CDF of the events.
-    """
-    with ops.name_scope(self.name):
-      with ops.name_scope(name, values=[self.lam, x]):
-        x = self._check_x(x, check_integer=False)
-        return math_ops.igammac(math_ops.floor(x + 1), self.lam)
+  def _log_unnormalized_prob(self, x):
+    if self.validate_args:
+      x = distribution_util.embed_check_nonnegative_discrete(
+          x, check_integer=True)
+    return x * math_ops.log(self.rate) - math_ops.lgamma(x + 1)
 
-  def prob(self, x, name="prob"):
-    """Probability mass function.
+  def _mean(self):
+    return array_ops.identity(self.rate)
 
-    Args:
-      x: Non-negative floating point tensor with dtype `dtype` and whose shape
-        can be broadcast with `self.lam`. `x` is only legal if it is
-        non-negative and its components are equal to integer values.
-      name: A name for this operation.
+  def _variance(self):
+    return array_ops.identity(self.rate)
 
-    Returns:
-      The probabilities of the events.
-    """
-    return super(Poisson, self).prob(x, name)
+  @distribution_util.AppendDocstring(
+      """Note: when `rate` is an integer, there are actually two modes: `rate`
+      and `rate - 1`. In this case we return the larger, i.e., `rate`.""")
+  def _mode(self):
+    return math_ops.floor(self.rate)
 
-  def log_prob(self, x, name="log_prob"):
-    """Log probability mass function.
-
-    Args:
-      x: Non-negative floating point tensor with dtype `dtype` and whose shape
-        can be broadcast with `self.lam`. `x` is only legal if it is
-        non-negative and its components are equal to integer values.
-      name: A name for this operation (optional).
-
-    Returns:
-      The log-probabilities of the events.
-    """
-    with ops.name_scope(self.name):
-      with ops.name_scope(name, values=[self.lam, x]):
-        x = self._check_x(x, check_integer=True)
-        return x * math_ops.log(self.lam) - self.lam - math_ops.lgamma(x + 1)
-
-  def mean(self, name="mean"):
-    """Mean of the distribution.
-
-    Args:
-      name: Name for the op.
-
-    Returns:
-      mean: `Tensor` of the same type and shape as `lam`.
-    """
-    with ops.name_scope(self.name):
-      with ops.name_scope(name, values=[self.lam]):
-        return array_ops.identity(self.lam)
-
-  def variance(self, name="variance"):
-    """Variance of the distribution.
-
-    Args:
-      name: Name for the op.
-
-    Returns:
-      variance: `Tensor` of the same type and shape as `lam`.
-    """
-    with ops.name_scope(self.name):
-      with ops.name_scope(name, values=[self.lam]):
-        return array_ops.identity(self.lam)
-
-  def std(self, name="std"):
-    """Standard deviation of the distribution.
-
-    Args:
-      name: Name for the op.
-
-    Returns:
-      std: `Tensor` of the same type and shape as `lam`.
-    """
-    with ops.name_scope(self.name):
-      with ops.name_scope(name, values=[self.lam]):
-        return math_ops.sqrt(self.variance())
-
-  def mode(self, name="mode"):
-    """Mode of the distribution.
-
-    Note that when `lam` is an integer, there are actually two modes.
-    Namely, `lam` and `lam - 1` are both modes. Here we return
-    only the larger of the two modes.
-
-    Args:
-      name: Name for the op.
-
-    Returns:
-      mode: `Tensor` of the same type and shape as `lam`.
-    """
-    with ops.name_scope(self.name):
-      with ops.name_scope(name, values=[self.lam]):
-        return math_ops.floor(self.lam)
-
-  @property
-  def is_continuous(self):
-    return False
-
-  @property
-  def is_reparameterized(self):
-    return False
-
-  def _check_x(self, x, check_integer=True):
-    with ops.name_scope('check_x', values=[x]):
-      x = ops.convert_to_tensor(x, name="x")
-      if not self.validate_args:
-        return x
-      dependencies = [check_ops.assert_non_negative(x)]
-      if check_integer:
-        dependencies += [distribution_util.assert_integer_form(
-            x, message="x has non-integer components.")]
-      return control_flow_ops.with_dependencies(dependencies, x)
+  def _sample_n(self, n, seed=None):
+    return random_ops.random_poisson(
+        self.rate, [n], dtype=self.dtype, seed=seed)

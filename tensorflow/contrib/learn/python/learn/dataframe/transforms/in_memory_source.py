@@ -1,4 +1,4 @@
-# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ from tensorflow.contrib.learn.python.learn.dataframe import transform
 from tensorflow.contrib.learn.python.learn.dataframe.queues import feeding_functions
 
 
-class BaseInMemorySource(transform.Transform):
+class BaseInMemorySource(transform.TensorFlowTransform):
   """Abstract parent class for NumpySource and PandasSource."""
 
   def __init__(self,
@@ -121,6 +121,36 @@ class NumpySource(BaseInMemorySource):
   @property
   def _output_names(self):
     return ("index", "value")
+
+
+class OrderedDictNumpySource(BaseInMemorySource):
+  """A zero-input Transform that produces Series from a dict of numpy arrays."""
+
+  def __init__(self,
+               ordered_dict_of_arrays,
+               num_threads=None,
+               enqueue_size=None,
+               batch_size=None,
+               queue_capacity=None,
+               shuffle=False,
+               min_after_dequeue=None,
+               seed=None,
+               data_name="pandas_data"):
+    if "index" in ordered_dict_of_arrays.keys():
+      raise ValueError("Column name `index` is reserved.")
+    super(OrderedDictNumpySource, self).__init__(ordered_dict_of_arrays,
+                                                 num_threads, enqueue_size,
+                                                 batch_size, queue_capacity,
+                                                 shuffle, min_after_dequeue,
+                                                 seed, data_name)
+
+  @property
+  def name(self):
+    return "OrderedDictNumpySource"
+
+  @property
+  def _output_names(self):
+    return tuple(["index"] + list(self._data.keys()))
 
 
 class PandasSource(BaseInMemorySource):
